@@ -1,0 +1,102 @@
+---
+title: 'Statistical Learning, Homework #1'
+date: '02/04/2023'
+author: 'Annalisa Xamin, matricola 241482'
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,
+                      message=FALSE,
+                      tidy.opts=list(width.cutoff = 80),
+                      tidy = TRUE)
+
+```
+
+The data set for this homework is available at [breastfeed.Rdata](breastfeed.Rdata).
+The data come from a study conducted at a UK hospital, investigating the possible factors affecting the decision of pregnant women to breastfeed their babies. The outcome of the study could aid in targeting breastfeeding promotions towards women with a lower probability of choosing it. 
+
+For the study, 135 expectant mothers were asked what kind of feeding method they would use for their coming baby. The responses were classified into two categories (variable **breast** in the dataset): the first category  (coded 1) includes the cases "breastfeeding", "try to breastfeed" and "mixed breast- and bottle-feeding", while the second  category (coded 0) corresponds to "exclusive bottle-feeding". The possible factors, that are available in the data, are the advancement of the pregnancy (**pregnancy**), how the mothers were fed as babies (**howfed**), how the mother's friend fed their babies (**howfedfr**), if they have a partner (**partner**), their age (**age**), the age at which they left full-time education (**educat**), their ethnic group (**ethnic**) and if they have ever smoked (**smokebf**) or if they have stopped smoking (**smokenow**). All of the factors are two-level factors. The first listed level of each factor is used as the reference (and coded with 0).
+
+```{r load libraries}
+library("tidyverse")
+library("tidymodels")
+library("caret")
+library("e1071")
+```
+
+
+- Explore the data: what is the nature of the response variable (`breast`)? Are there potential issues with any of the predictors? Do you need pre-processing or can you proceed with the data as it is?
+
+```{r import data}
+load("breastfeed.Rdata")
+dataf <- breastfeed
+summary(dataf)
+```
+
+A potential issues could be the presence of NAs. As we can see from the summary of the data, there are 2 NAs in `age` and 2 NAs in `educat`.
+Removing the NAs would be controversial, so I will substitute them with the mean of the column.
+
+```{r}
+for(i in 1:ncol(dataf)){
+  dataf[ , i][is.na(dataf[ , i])] <- mean(dataf[ , i], na.rm = TRUE)
+}
+any(is.na(dataf))
+summary(dataf)
+```
+
+As we can see from the summary, the substitution of NAs has been successful and the other statistics remained unchanged.
+
+
+- Split the data into (reproducible) training and test sets. Given the class imbalance, you could aim for sets that have the same imbalance with respect to the outcome variable. In order to do this, you could either perform the splitting manually on each class, or use dedicated functions (for example, `caret::createDataPartition(labels, p=train_size)`, with `train_size` a number between 0 and 1 representing the percentage of data you would like to use for training.
+
+For reproducibility, I set the seed to 241482.
+```{r set seed}
+set.seed(241482)
+```
+
+Now, I split the data into training and testing sets (80-20).
+```{r}
+part <- caret::createDataPartition(dataf$breast, p=0.8)
+train_df <- dataf[part$Resample1, ]
+test_df <- dataf[-part$Resample1, ]
+```
+
+
+
+- Fit the following GLM model:
+\begin{align*}
+\mbox{logit}(\mbox{E(breast)}) &= \beta_0 + \beta_1     \mbox{pregnancy} + \beta_2 \mbox{howfed} + \beta_3 \mbox{howfedfr} \\&+ \beta_4 \mbox{partner} + \beta_5 \mbox{age} + \beta_6 \mbox{educat} + \beta_7 \mbox{ethnic} + \beta_8 \mbox{smokenow} + \beta_9 \mbox{smokebf}
+\end{align*} Discuss the `summary` and the interpretation of the model in the context of the study.
+
+```{r}
+
+```
+
+
+- Fit a k-nn classifier, by performing a careful selection of the tuning parameter $k$. 
+
+```{r}
+
+```
+
+- Fit a Naïve Bayes classifier. 
+
+```{r}
+
+```
+
+
+- Evaluate the performance of the methods and compare the results.
+```{r}
+
+```
+
+
+## Hints
+In R, the Naïve Bayes (NB) classifier is included in the package `e1071`. The syntax is `naiveBayes(formula, data)` for model fitting, and the usual `predict(fit, newdata)` for predicting new data.
+A fitted `naiveBayes` object stores the conditional probabilities for each feature, together with the *a priori* probabilities.
+To compute the posterior probabilities, you call `predict()` with the argument `type="raw"`.
+
