@@ -1,0 +1,93 @@
+---
+title: 'Statistical Learning, Homework #2'
+author: "Annalisa Xamin"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,
+                      message=FALSE,
+                      tidy.opts=list(width.cutoff = 80),
+                      tidy = TRUE,
+                      fig.width = unit(3, "cm"),
+                      fig.height = unit(2, "cm"),
+                      fig.align = "center"
+                      )
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(e1071) # Naive Bayes
+library(pROC)
+library(gridExtra)
+library(tree)
+library(randomForest)
+library(gbm)
+library(ggplot2)
+library(vip)
+library(pracma)
+
+# Set working directory
+setwd("~/Documents/Repo_Git/SL_homeworks/Homework2")
+```
+
+# Introduction
+
+In the following analysis, we will focus on cancer data to investigate the correlation between the level of prostate-specific antigen (`lpsa`, in ng/ml and log scaled) and a number of clinical measures, measured in 97 men who were about to receive a radical prostatectomy. In particular, the 9 explanatory variables are:
+
+- `lcavol`: log(cancer volume in $cm^3$)
+
+- `lweight`: log(prostate weight in $g$)
+
+- `age` in years
+
+- `lbph`: log(amount of benign prostatic hyperplasia in $cm^2$)
+
+- `svi`: seminal vesicle invasion (1 = yes, 0 = no)
+
+- `lcp`: log(capsular penetration in $cm$)
+
+- `gleason`: Gleason score for prostate cancer (6,7,8,9)
+
+- `pgg45`: percentage of Gleason
+
+During the analysis we will use three different methods (cost-complexity decision trees, random forests and boosting) to later on compare their performances.
+
+To start, the data is loaded and a summary is printed.
+```{r load data}
+df <- read.csv('./prostate.csv')
+summary(df)
+```
+As we can see from the summary, in the data there are no NAs.
+```{r check dimension df and show the dataset, include=FALSE}
+dim(df)
+# show the dataset
+table(head(df))
+```
+
+
+# Decision Tree
+Fit a decision tree on the whole data and plot the results. Choose the tree complexity by cross-validation and decide whether you should prune the tree based on the results. Prune the tree if applicable and interpret the fitted model.
+```{r}
+set.seed(1)
+
+```
+
+
+# Random Forest
+Consider now a random forest and let m be the number of variables to consider at each split. Set the range for m from 1 to the number of explanatory variables, say nvar, and define a k-fold cross-validation schema for the selection of this tuning parameter, with k of your choice. Prepare a matrix with nvar rows and 2 columns and fill the first column with the average cross-validation error corresponding to each choice of m and the second column with the OOB error (from the full dataset). Are the CV and OOB error different? Do they reach the minimum at the same value of m? Interpret the optimal model (either using the CV or the OOB error).
+
+# Boosted regression trees
+Fit boosted regression trees making a selection of the number of boosting iterations (n.trees) by CV. Interpret
+your selected optimal model.
+
+# Comparison
+Compare the performance of the three methods (cost-complexity decision trees, random forests and boosting)
+using cross-validation. Make sure that the model complexity is re-optimized at each choice of the training set
+(either using another CV or using the OOB error).
+
+# Conclusion
+Draw some general conclusions about the analysis and the different methods that you have considered.
