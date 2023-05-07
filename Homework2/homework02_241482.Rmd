@@ -1,6 +1,6 @@
 ---
 title: 'Statistical Learning, Homework #2'
-author: "Annalisa Xamin"
+author: 'Annalisa Xamin'
 output:
   pdf_document:
     latex_engine: xelatex
@@ -11,31 +11,26 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=FALSE,
                       message=FALSE,
-                      tidy.opts=list(width.cutoff = 80),
+                      tidy.opts=list(width.cutoff = 60),
                       tidy = TRUE,
-                      fig.width = unit(3, "cm"),
-                      fig.height = unit(2, "cm"),
+                      #fig.width = unit(3, "cm"),
+                      #fig.height = unit(2, "cm"),
                       fig.align = "center"
                       )
+
 library(tidyverse)
-library(tidymodels)
 library(caret)
-library(e1071) # Naive Bayes
-library(pROC)
-library(gridExtra)
 library(tree)
 library(randomForest)
+library(cowplot) # to use plot_grid
+library(vip) # variable importance plot
 library(gbm)
-library(ggplot2)
-library(vip)
 library(pracma)
 
 # Set working directory
 setwd("~/Documents/Repo_Git/SL_homeworks/Homework2")
 ```
-
 # Introduction
-
 In the following analysis, we will focus on cancer data to investigate the correlation between the level of prostate-specific antigen (`lpsa`, in ng/ml and log scaled) and a number of clinical measures, measured in 97 men who were about to receive a radical prostatectomy. In particular, the 9 explanatory variables are:
 
 - `lcavol`: log(cancer volume in $cm^3$)
@@ -54,40 +49,440 @@ In the following analysis, we will focus on cancer data to investigate the corre
 
 - `pgg45`: percentage of Gleason
 
-During the analysis we will use three different methods (cost-complexity decision trees, random forests and boosting) to later on compare their performances.
+During the analysis we will use three different methods (cost-complexity decision trees, random forests and boosting) to later compare their performances.
 
 To start, the data is loaded and a summary is printed.
 ```{r load data}
-df <- read.csv('./prostate.csv')
-summary(df)
+df_prostate <- read.csv("./prostate.csv", sep = ",")
+summary(df_prostate)
 ```
 As we can see from the summary, in the data there are no NAs.
-```{r check dimension df and show the dataset, include=FALSE}
-dim(df)
-# show the dataset
-table(head(df))
+
+```{r show the dataset, include=FALSE}
+knitr::kable(head(df_prostate))
 ```
 
+```{r check dataset dimension, include=FALSE}
+dim(df_prostate) # 97  9
+```
 
 # Decision Tree
-Fit a decision tree on the whole data and plot the results. Choose the tree complexity by cross-validation and decide whether you should prune the tree based on the results. Prune the tree if applicable and interpret the fitted model.
+We split the data into training and test sets using the `caret` package and fit a decision tree on the whole data set.
 ```{r}
 set.seed(1)
 
+sample <- caret::createDataPartition(df_prostate$lpsa, p=0.8)
+train_data <- df_prostate[sample$Resample1, ]
+test_data <- df_prostate[-sample$Resample1, ]
+x_train <- model.matrix(lpsa ~ ., data = train_data)[, -1]
+x_test <- model.matrix(lpsa ~ ., data = test_data)[, -1]
+y_train <- train_data$lpsa
+y_test <- test_data$lpsa
+
+# Fit the model on the whole data
+tree_prostate <- tree(lpsa ~ ., df_prostate)
+summary(tree_prostate)
+```
+
+The tree was created and only tree variables were used, namely `lcavol`, `lweight`, `pgg45`.
+We then procede by plotting the tree.
+```{r visualize unpruned tree, fig.cap="Unpruned decision tree", fig.width = unit(11, "cm"), fig.height = unit(12, "cm")}
+plot(tree_prostate) # plot the branches
+text(tree_prostate, pretty = 0) # add the labels to the branches
+title(main = "Unpruned tree")
+```
+
+The most important predictor is at the stump of the tree. As we could already saw from the summary of the tree, it has 9 terminal nodes which identify the partitions of the feature space. Each terminal node displays the average of the `lpsa` values for the corresponding region, which is the prediction for the observations that will fall within it.
+
+```{r tree output in text form, include=FALSE}
+tree_prostate
 ```
 
 
+## Cross-validation
+Since the unpruned tree may overfit the data, we will proceed with the cross-validation in order to choose the tree complexity and decide whether we should prune the tree based on the result.
+```{r cv, fig.cap="Cross validated tree size selection", fig.width = unit(4, "cm"), fig.height = unit(3, "cm")}
+set.seed(1)
+cv_tree <- cv.tree(object=tree_prostate)
+
+graph <- tibble(dev=cv_tree$dev, tsize=cv_tree$size, alpha = cv_tree$k)
+ggplot(data = graph, aes(x=tsize, y=dev)) +
+  geom_line(color="darkgrey") +
+  geom_point(color="black", size=3) +
+  geom_point(data = NULL,
+             aes(x=cv_tree$size[which.min(cv_tree$dev)],
+                 y=min(cv_tree$dev),
+                 colour="red",
+                 size = 3)) +
+  labs(y = "Deviance", x = "Tree size") +
+  guides(size = "none", colour = "none") +
+  scale_x_discrete(labels= 1:9, limits= 1:9)
+```
+
+```{r visualize cv_tree, include = FALSE}
+cv_tree
+names(cv_tree) #  "size"   "dev"    "k"      "method"
+```
+
+
+```{r check where is the min, include=FALSE}
+cv_tree$size[which.min(cv_tree$dev)] # 4
+```
+
+From the cross-validation, we get that the lowest deviance, therefore the best result, is obtained with size of 4. 
+
+## Pruning the tree
+We use the result obtained from the cross-validation to prune the tree.
+```{r pruned tree, fig.cap="Pruned decision tree"}
+opt.size <- cv_tree$size[which.min(cv_tree$dev)] # optimal size = 4
+pruned_prostate <- prune.tree(tree_prostate, best = opt.size) # prune using the optimal size
+
+# plot the pruned tree
+plot(pruned_prostate)
+text(pruned_prostate, pretty=0)
+title(main="Pruned tree")
+```
+
+```{r summary pruned tree, include=FALSE}
+summary(pruned_prostate)
+```
+As we can see from the plot of the pruned tree, `pgg45` is no longer considered as predictor. The variables used in tree construction are only 2: `lcavol` and `lweight`.
+
+## Fit the model on the training data
+Finally, we refit the model only on the training data and make predictions. 
+```{r refit on train data}
+set.seed(1)
+tree_prostate <- tree(lpsa ~ ., train_data)
+pruned_prostate <- prune.tree(tree_prostate, best=4)
+y_hat <- predict(pruned_prostate, test_data)
+```
+
+To simplify the computation of MSE, we define a function for that:
+```{r compute MSE function}
+compute_mse <- function(preds, truth){mean((preds - truth)^2)}
+```
+
+```{r MSE decision tree}
+MSE_dt <- compute_mse(y_hat, test_data$lpsa)
+paste("MSE: ", MSE_dt)
+```
+
+```{r RMSE, include=FALSE}
+paste("Squared root of the MSE: ",sqrt(MSE_dt))
+```
+
+The test MSE associated to this decision tree is $\approx 1.266964$. This means that this models leads to test predictions that are (on average) $\approx 1.125595$ (RMSE) of the true median value.
+
 # Random Forest
-Consider now a random forest and let m be the number of variables to consider at each split. Set the range for m from 1 to the number of explanatory variables, say nvar, and define a k-fold cross-validation schema for the selection of this tuning parameter, with k of your choice. Prepare a matrix with nvar rows and 2 columns and fill the first column with the average cross-validation error corresponding to each choice of m and the second column with the OOB error (from the full dataset). Are the CV and OOB error different? Do they reach the minimum at the same value of m? Interpret the optimal model (either using the CV or the OOB error).
+We consider now a random forest. To begin, we define the number of variables that Random Forest models will examine at each split in `m` and the 5 folds for the k-fold cross validation. In particular, we use the `createFolds` function to specify the number of folds.
+```{r random forest}
+set.seed(1)
+
+nvar <- ncol(df_prostate) - 1 # number of predictors 
+m <- seq(1, nvar) 
+
+# initialize empty matrix that will contains the errors
+err_matrix <- matrix(nrow = nvar, ncol = 2) 
+
+folds <- createFolds(df_prostate$lpsa, k = 5) # 5 folds
+
+MSE <- c() # initialize empty list to store MSE
+OOB <- c() # initialize empty list to store OOB error
+
+for(i in m){ # iterate over m
+  for(f in folds){ # iterate over the folds
+    rf <- randomForest(lpsa ~ .,
+                       data = df_prostate[-f, ],
+                       mtry = i,
+                       importance = TRUE)
+    y_hat_rf <- predict(rf, newdata=df_prostate[f, ])
+    MSE <- c(MSE, compute_mse(y_hat_rf,df_prostate[f, ]$lpsa))
+    OOB <- c(OOB, compute_mse(rf$predicted, df_prostate[-f,]$lpsa))
+  }
+  err_matrix[i, 1] <- mean(MSE)
+  err_matrix[i, 2] <- mean(OOB)
+  MSE <- c()
+  OOB <- c()
+}
+```
+
+```{r error matrix, include=FALSE}
+err_matrix
+```
+
+```{r convert error matrix to df, include=FALSE}
+# convert matrix to df
+err_df = as.data.frame(err_matrix, row.names=m)
+colnames(err_df) = c("CV_error", "OOB_error")
+```
+
+```{r error df ordered based on CV error, include=FALSE}
+# order results based on MSE
+knitr::kable(err_df[order(err_df$CV_error),])
+```
+
+```{r error df ordered based on OOB error, include=FALSE}
+# order results based on OOB error
+knitr::kable(err_df[order(err_df$OOB_error),])
+```
+
+Now, we procede to plot the CV and OOB results.
+```{r plot CV and OOB results}
+CV_plot <- ggplot(NULL, aes(x=c(1:8), y=err_matrix[,1])) +
+  theme_light() +
+  geom_line(color="darkgrey") +
+  geom_point(color="black", size=3) +
+  geom_point(data = NULL, aes(x=c(1:8)[which.min(err_matrix[,1])],
+                              y=min(err_matrix[,1]),
+                              colour="red",
+                              size = 3)) +
+  labs(y="CV error", x="m") +
+  guides(size = F, colour = F) +
+  scale_x_discrete(limits=1:8, labels = c(1:8))
+
+OOB_plot <- ggplot(NULL, aes(x=c(1:8), y=err_matrix[,2])) +
+  theme_light() +
+  geom_line(color="darkgrey") +
+  geom_point(color="black", size=3) +
+  geom_point(data = NULL, aes(x=c(1:8)[which.min(err_matrix[,2])],
+                              y=min(err_matrix[,2]),
+                              color="red",
+                              size = 3)) +
+  labs(y="OOB error", x="m") +
+  guides(size = F, colour = F) +
+  scale_x_discrete(limits=1:8, labels = c(1:8))
+```
+
+```{r plot CV and OOB results together, fig.width = unit(4, "cm"), fig.height = unit(3, "cm")}
+plot_grid(CV_plot, OOB_plot, labels = "", ncol = 2, nrow = 1)
+```
+
+```{r print bets CV and OOB error, include=FALSE}
+print(paste(paste0("Best CV error: ", min(err_matrix[,1]), "."), "Best value of m:", which.min(err_matrix[,1])))
+print(paste(paste0("Best OOB error: ", min(err_matrix[,2]), "."), "Best value of m:", which.min(err_matrix[,2])))
+```
+
+As we can notice, CV and OOB errors do not reach the minimum at the same value of $m$: for CV the minimum is reached by 5, while for the OOB error the minimum is 4.
+
+## The optimal model
+We proceed our analysis by creating another model using the training and testing datasets splits and setting `mtry = 5`, as suggested from the CV error. We choose the result suggested from the CV over the one obtained from the OOB, because CV is more precise. OOB can be useful with a higher number of data, since it is more computational feasible. But in our case we have small data, so CV works just fine.
+```{r variable importance opt model, fig.cap="Variable importance plot", fig.width = unit(4, "cm"), fig.height = unit(3, "cm")}
+set.seed(1)
+rf_adj <- randomForest(x_train,
+                   y_train,
+                   xtest = x_test,
+                   ytest = y_test,
+                   mtry = 5,
+                   importance = TRUE)
+
+vip(rf_adj, aesthetics = c(fill = "blue")) +
+  theme_light()
+```
+From the plot, we can see that the most important predictor is `lcavol`, followed by `pgg45` and `lweight`. Both `lcavol` and `lweight` were present also in the pruned tree, while `pgg45` were not.
+
+We visualize the error.
+```{r, fig.cap="Random Forest: Test set MSE vs number of trees", fig.width = unit(4, "cm"), fig.height = unit(3, "cm")}
+ggplot(NULL, aes(x=c(1:500), y=rf_adj$test$mse)) +
+  theme_light() +
+  geom_line() +
+  labs(y="Test set MSE",
+       x="Number of Trees")
+```
+
+```{r MSE optimal model}
+y_hat_rf <- rf_adj$test$predicted
+MSE_rf <-compute_mse(y_hat_rf,test_data$lpsa)
+paste("MSE: ", MSE_rf)
+```
+
+```{r RMSE optimal model, include=FALSE}
+paste("Squared root of the MSE: ",sqrt(MSE_rf))
+```
+
+The test MSE is $\approx 0.749221$, which is better than the decision tree's result.
 
 # Boosted regression trees
-Fit boosted regression trees making a selection of the number of boosting iterations (n.trees) by CV. Interpret
-your selected optimal model.
+To fit boosted regression trees on the whole dataset we will use the function `gbm`. To find the optimal model, we need to find the best number of boosting iterations (`n.trees`). To do that, we will do a k-fold cross validation, already implemented by `gbm`.
+```{r}
+set.seed(1)
+matrix_boost <- matrix(0, nrow=20, ncol = 3) # initialize matrix
 
-# Comparison
-Compare the performance of the three methods (cost-complexity decision trees, random forests and boosting)
-using cross-validation. Make sure that the model complexity is re-optimized at each choice of the training set
-(either using another CV or using the OOB error).
+for(d in 1:20){
+  boost <- gbm(lpsa ~ .,
+               data = df_prostate,
+               distribution = "gaussian",
+               n.trees = 1000,
+               interaction.depth = d,
+               cv.folds = 5,
+               verbose = F,
+               n.cores = 4)
+  
+  matrix_boost[d,1] <- min(boost$cv.error)
+  matrix_boost[d,2] <- which.min(boost$cv.error)
+  matrix_boost[d,3] <- gbm.perf(boost,
+                             plot.it=F,
+                             oobag.curve=F,
+                             method="OOB")
+}
+```
+
+```{r}
+paste("The cross validated MSE suggests",
+            matrix_boost[which.min(matrix_boost[,1]),2],
+            "iterations (trees) and a depth of",
+            which.min(matrix_boost[,1]))
+
+paste("The OOB error suggests",
+            matrix_boost[which.min(matrix_boost[,1]),3],
+            "iterations (trees) and a depth of",
+            which.min(matrix_boost[which.min(matrix_boost[,1]),2]))
+```
+```{r}
+colnames(matrix_boost) <- c("MSE|", "Iterations (MSE)|", "Iterations (OOB)")
+knitr::kable(matrix_boost)
+```
+
+As we can notice from the table above, we get different suggestion depending on the type of method we choose, CV or OOB.
+
+## Optimal model
+As we mentioned before, we prefer the results obtained from the CV over the ones obtained from the OOB. So, for the optimal, we set `n.trees = 35` and `interaction.depth = 6`.
+```{r}
+set.seed(1)
+boost_opt <- gbm(lpsa ~ .,
+             data = df_prostate,
+             distribution = "gaussian",
+             n.trees = 35,
+             interaction.depth = 6,
+             cv.folds = 5,
+             verbose = F,
+             n.cores = 4)
+
+y_hat_boost_opt <- predict(boost_opt, test_data)
+mse_boost_opt <- compute_mse(y_hat_boost_opt, test_data$lpsa)
+paste("MSE optimal model: ", mse_boost_opt)
+```
+
+In this case, the MSE resulted from the boosted regression tree is much lower than the one obtained in the decision tree and in the random forest.
+
+# Performance comparison
+Until now, we compared the models standalone. Thus, we will now do a cross validation to compare all of them.
+```{r, warning=FALSE}
+set.seed(1)
+
+out_folds <- createFolds(df_prostate$lpsa, k = 5) # outer folds
+
+# initalize lists to store MSE
+dt_mse <- c() 
+rf_mse <- c()
+boosting_mse <- c()
+trees_boost <- c()
+
+r <- 1
+
+for(f in out_folds){ # iterate over outer folds
+  r2 <- 1
+  in_folds <- createFolds(df_prostate[-f,]$lpsa, k = 5) # inner folds
+  in_param <- matrix(0, nrow = length(in_folds), ncol = 2) # inner parameters decision tree
+  in_param_rf <- matrix(0, nrow = length(in_folds), ncol = 2) # inner parameters random forest
+  in_param_boost <- matrix(0, nrow = length(in_folds), ncol = 2) # inner parameters boosting
+  
+  for(f2 in in_folds){ # iterate over inner folds
+    # Decision tree
+    tree_nested <- tree(lpsa ~ ., df_prostate[-f,][-f2,])
+    in_MSE_pruning <- c()
+    preds <- c()
+    
+    for(i in 2:(nvar+1)){
+      pruned_tree_nested <- prune.tree(tree_nested, best=i)
+      y_hat_nd <- predict(pruned_tree_nested, df_prostate[-f,][f2,])
+      in_MSE_pruning <- c(in_MSE_pruning,compute_mse(y_hat_nd,df_prostate[-f,][f2,]$lpsa))
+    }
+    in_param[r2, 1] <- min(in_MSE_pruning)
+    in_param[r2, 2] <- which.min(in_MSE_pruning)
+    
+    # Random forest
+    mse_rf_in <- c()
+    for(i in 1:nvar){
+      rf <- randomForest(lpsa ~ .,
+                         data = df_prostate[-f,][-f2, ],
+                         mtry = i,
+                         importance = TRUE)
+      
+      y_hat_rf <- predict(rf, newdata=df_prostate[-f,][f2, ])
+      mse_rf_in <- c(mse_rf_in, compute_mse(y_hat_rf, df_prostate[-f,][f2, ]$lpsa))
+    }
+    
+    in_param_rf[r2, 1] <- min(mse_rf_in)
+    in_param_rf[r2, 2] <- which.min(mse_rf_in)
+    
+    # Boosting
+    boosting_in <- matrix(0, nrow = 8, ncol = 2)
+    for(d in 1:8){
+      boost <- gbm(lpsa ~ .,
+                   data = df_prostate[-f,][-f2,],
+                   distribution = "gaussian",
+                   n.trees = 1000,
+                   interaction.depth = d,
+                   n.cores = 4,
+                   verbose = F)
+      
+      trees_boost <- c(trees_boost, gbm.perf(boost,
+                                             plot.it=F,
+                                             oobag.curve=F,
+                                             method="OOB"))
+      
+      boosting_in[d,1] <- d
+      y_hat_boost <- predict(boost, df_prostate[-f,][f2,])
+      boosting_in[d,2] <- compute_mse(y_hat_boost, df_prostate[-f,][f2,]$lpsa)
+    }
+    
+    in_param_boost[r2, 1] <- min(boosting_in[,2])
+    in_param_boost[r2, 2] <- boosting_in[which.min(boosting_in[,2]), 1]
+    r2 <- r2 + 1
+    
+  }
+  
+  # Testing the models in the outer fold
+  tree_nested <- tree(lpsa ~ ., df_prostate[-f,])
+  pruned_tree_nested <- prune.tree(tree_nested, best=in_param[which.min(in_param[1,]), 2])
+  y_hat_nd <- predict(pruned_tree_nested, df_prostate[f,])
+  dt_mse <- c(dt_mse, compute_mse(y_hat_nd, df_prostate[f,]$lpsa))
+  
+  rf <- randomForest(lpsa ~ .,
+                     data = df_prostate[-f,],
+                     mtry = in_param_rf[which.min(in_param_rf[,1]), 2],
+                     importance = TRUE)
+  
+  y_hat_rf <- predict(rf, newdata=df_prostate[f,])
+  rf_mse <- c(rf_mse, compute_mse(y_hat_rf, df_prostate[f,]$lpsa))
+  boost <- gbm(lpsa ~ .,
+               data = df_prostate[-f,],
+               distribution = "gaussian",
+               n.trees = Mode(trees_boost),
+               interaction.depth = in_param_boost[which.min(in_param_boost[,1]), 2],
+               n.cores = 4,
+               verbose = F)
+  
+  y_hat_boost <- predict(boost, df_prostate[f,])
+  boosting_mse <- c(boosting_mse, compute_mse(y_hat_boost, df_prostate[f,]$lpsa))
+  r <- r + 1
+}
+```
+
+In the following table and plot, we can visualize the results of the comparison between the 3 different models.
+```{r print table comparison}
+df_comparison = data.frame(Model = c("Decision Tree", "Random Forest","Boosted Regression Tree"),
+                           MSE = c(mean(dt_mse), mean(rf_mse), mean(boosting_mse))
+                           )
+knitr::kable(df_comparison)
+```
+
+```{r plot performance comparison, fig.cap="Performance comparison between models", fig.width = unit(5, "cm"), fig.height = unit(4, "cm")}
+ggplot(data=df_comparison, aes(x=Model, y=MSE)) +
+  geom_bar(stat="identity", fill = "blue", width = 0.5) +
+  labs(y="MSE", x="Model") +
+  theme_light()
+```
 
 # Conclusion
-Draw some general conclusions about the analysis and the different methods that you have considered.
+As we can see from the last plot, the lower MSE is obtained by the random forest, meaning that this is the best model for this data set. The results agree with what we expected: decision trees are easy to interpret but can be very non-robust and suffers from high variance (in other words, a small change in the data can cause a large change in the final estimated tree), while methods like random forest and boosting are more robust and their predictive performance is substantially improved.
