@@ -7,6 +7,7 @@ Homeworks for Statistical Learning course (held by Prof. Vinciotti @ University 
 
 - **Homework 3**: support vector machines
 
+## Structure of the repository
 For each homework, the respective folder contains the following files:
 
 - the dataset used for the analysis;
